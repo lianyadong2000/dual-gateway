@@ -1,0 +1,101 @@
+# 双模网关 Docker Compose 部署
+# 用法：
+#   构建并启动：  docker compose -f deploy/docker/docker-compose.yml up -d --build
+#   查看状态：    docker compose -f deploy/docker/docker-compose.yml ps
+#   停止：        docker compose -f deploy/docker/docker-compose.yml down
+#
+# 端口规划（每个网关进程内部三路协议并存）：
+#   8080/tcp  C 端 WebSocket     5683/udp MQTT-SN 明文
+#   5684/udp  DTLS-PSK           5685/udp MQTT-SN over QUIC
+#   9090/tcp  健康检查/指标
+#
+# 多实例说明：同一宿主机部署多个网关实例时，宿主端口需错开
+# （IoT 三路 UDP 端口无法共享），gateway-2 演示仅暴露 C 端与监控；
+# 生产多节点请用 Kubernetes Service / 负载均衡分发，见 deploy/k8s。
+#
+# Kafka 可选：单机模式无 Kafka 网关可正常运行（日志 WARN、kafka_available=false），
+# 若不需要可注释掉 kafka / zookeeper 服务及其依赖。
+
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    networks:
+      - gateway-net
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    profiles: ["kafka"]          # 可选：docker compose --profile kafka up 才启动
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    networks:
+      - gateway-net
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    profiles: ["kafka"]
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - gateway-net
+
+  gateway-1:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8080:8080"       # C 端 WebSocket
+      - "5683:5683/udp"   # IoT MQTT-SN 明文
+      - "5684:5684/udp"   # IoT DTLS-PSK
+      - "5685:5685/udp"   # IoT MQTT-SN over QUIC
+      - "9090:9090"       # 监控/健康
+    environment:
+      - GATEWAY_ID=gateway-1
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:29092
+      - LOG_LEVEL=info
+    depends_on:
+      - redis
+    networks:
+      - gateway-net
+
+  # 多实例演示（宿主端口错开；IoT 三路 UDP 不映射宿主避免冲突）
+  gateway-2:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports:
+      - "8081:8080"       # C 端 WebSocket（宿主 8081）
+      - "9091:9090"       # 监控（宿主 9091）
+    environment:
+      - GATEWAY_ID=gateway-2
+      - REDIS_ADDR=redis:6379
+      - KAFKA_BROKERS=kafka:29092
+      - LOG_LEVEL=info
+    depends_on:
+      - redis
+    networks:
+      - gateway-net
+
+networks:
+  gateway-net:
+    driver: bridge
+
+volumes:
+  redis-data:

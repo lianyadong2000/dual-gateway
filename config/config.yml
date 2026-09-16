@@ -1,0 +1,98 @@
+# 运行时配置
+runtime:
+  max_procs: 20  # 最大CPU核心数（0=自动，20=本机核心数）
+
+# 日志配置
+log:
+  level: "info"  # debug, info, warn, error
+  format: "text" # json, text
+
+# C端网关配置
+cend:
+  host: "0.0.0.0"
+  port: 8080
+  max_connections: 100000
+  heartbeat_timeout: 120
+  read_buffer_size: 4096   # 单连接读缓冲（5万连接时内存友好）
+  write_buffer_size: 4096  # 单连接写缓冲
+  enable_compression: false
+  max_message_size: 1048576
+
+# IoT网关配置
+iot:
+  host: "0.0.0.0"
+  port: 5683          # MQTT-SN明文UDP端口
+  dtls_port: 5684     # DTLS-PSK独立端口（0表示禁用）
+  psk: "iot-default-psk-2026"  # 默认PSK（≥16字节；未登记设备可用其连接，生产应关闭）
+  dtls_enabled: true
+  max_packet_size: 65535
+  read_timeout: 30
+  write_timeout: 10
+  session_timeout: 300
+  worker_count: 2048   # UDP/QUIC/DTLS 包处理worker数（5万连接高并发吞吐）
+  # MQTT-SN over QUIC（三路协议并存；0-RTT 重连 + 连接迁移 + TLS1.3 加密）
+  quic_enabled: true   # 灰度时置 true 开启 QUIC 监听
+  quic_port: 5685       # QUIC 监听端口
+  quic_cert: "config/keys/quic_cert.pem"   # TLS证书；不存在时启动自动生成自签证书
+  quic_key: "config/keys/quic_key.pem"
+  quic_idle_sec: 300    # 连接空闲超时（秒）
+
+# Redis配置
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 300
+
+# Kafka配置
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic: "gateway_messages"
+  group_id: "gateway_group"
+
+# 鉴权配置
+auth:
+  # 密钥文件路径（由 cmd/tokengen 生成；文件优先于内嵌密钥）
+  jwt_private_key_file: "config/keys/jwt_private.pem"
+  jwt_public_key_file: "config/keys/jwt_public.pem"
+  jwt_issuer: "dual-gateway"
+  jwt_ttl: 7200  # Token有效期（秒），2小时
+
+  # PSK设备列表（生产环境应从数据库加载）
+  psk_devices:
+    device_001: "psk-key-001-123456"
+    device_002: "psk-key-002-123456"
+
+# 监控配置
+monitor:
+  host: "0.0.0.0"
+  port: 9090
+
+# 设备影子配置（C端查询/预占一律走影子，绝不直连弱网桩）
+shadow:
+  enabled: true
+  offline_ttl_seconds: 120        # 心跳TTL：超时判离线（桩无法上报离线，网关判定）
+  preoccupy_timeout_seconds: 60   # 预占超时：桩未确认则回滚为空闲
+  cmd_ttl_seconds: 86400          # 待执行指令TTL（桩长期离线作废）
+  max_cmd_batch: 10               # 每次拉取/下发最大指令数
+  push_enabled: true              # 状态变更推送（Pub/Sub → C端）
+  geo_enabled: true               # 附近桩查询（预留）
+  offline_scan_seconds: 15        # 预占超时回滚扫描间隔
+
+# 接入限流（防重连风暴/洪峰）
+# 说明：udp_per_ip_rate 为单源IP每秒CONNECT上限（防伪造源地址洪峰）。
+# 压测场景全部设备共用本机IP（127.0.0.1），默认 10000/s 兼顾防护与压测；
+# 生产可按场站规模调低（如 200/s）。
+rate_limit:
+  enabled: true
+  connect_rate: 10000             # CONNECT令牌桶：每秒接受握手数
+  connect_burst: 10000            # 桶容量
+  udp_per_ip_rate: 10000          # UDP源IP限流：每秒CONNECT数
+  udp_per_ip_burst: 20000         # 源IP桶容量
+  cend_accept_rate: 5000           # C端WebSocket accept节流（每秒）
+
+# 可视化管理后台（9090 端口 /admin，含一键全功能验收）
+admin:
+  enabled: true                   # 挂载管理后台（false 则 /admin 与 /api/admin/* 返回 404）
+  build_dir: "build"              # 压测二进制目录（验收/压测用例依赖 iot_loadtest/cend_loadtest）

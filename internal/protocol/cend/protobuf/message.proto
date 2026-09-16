@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package cend;
+
+option go_package = "internal/protocol/cend/protobuf";
+
+// 消息类型枚举
+enum MessageType {
+    AUTH = 0;           // 鉴权
+    AUTH_ACK = 1;       // 鉴权响应
+    HEARTBEAT = 2;      // 心跳
+    HEARTBEAT_ACK = 3;  // 心跳响应
+    MESSAGE = 4;        // 业务消息
+    MESSAGE_ACK = 5;    // 业务消息响应
+    PUSH = 6;           // 服务端推送
+    ERROR = 7;          // 错误
+}
+
+// 消息头
+message Header {
+    uint32 magic = 1;       // 魔数
+    uint32 version = 2;     // 版本
+    MessageType type = 3;   // 消息类型
+    uint64 seq = 4;         // 序列号
+    uint64 timestamp = 5;   // 时间戳
+    string trace_id = 6;    // 链路追踪ID
+}
+
+// 鉴权请求
+message AuthRequest {
+    string token = 1;       // JWT Token
+    string device_id = 2;   // 设备ID
+    string app_version = 3; // App版本
+    string os = 4;          // 操作系统
+    string os_version = 5;  // 系统版本
+}
+
+// 鉴权响应
+message AuthResponse {
+    int32 code = 1;         // 状态码
+    string message = 2;     // 消息
+    string session_id = 3;  // 会话ID
+    uint64 expires_at = 4;  // 过期时间
+}
+
+// 心跳
+message Heartbeat {
+    uint64 client_time = 1; // 客户端时间
+}
+
+// 心跳响应
+message HeartbeatAck {
+    uint64 server_time = 1; // 服务端时间
+}
+
+// 业务消息
+message Message {
+    string request_id = 1;  // 请求ID
+    string from = 2;        // 发送者
+    string to = 3;          // 接收者
+    string content = 4;     // 内容
+    string type = 5;  // 确保有 type 字段
+    map<string, string> metadata = 6; // 元数据
+    uint64 timestamp = 7;   // 时间戳
+}
+
+// 消息响应
+message MessageAck {
+    string request_id = 1;  // 请求ID
+    int32 code = 2;         // 状态码
+    string message = 3;     // 消息
+    uint64 timestamp = 4;   // 时间戳
+}
+
+// 推送消息
+message PushMessage {
+    string message_id = 1;  // 消息ID
+    string from = 2;        // 来源
+    string content = 3;     // 内容
+    map<string, string> metadata = 4; // 元数据
+    uint64 timestamp = 5;   // 时间戳
+}
+
+// 错误响应
+message ErrorResponse {
+    int32 code = 1;         // 错误码
+    string message = 2;     // 错误消息
+}

@@ -1,0 +1,294 @@
+# ============================================================================
+# 双模网关 Kubernetes 部署（C端 WS + IoT MQTT-SN/DTLS/QUIC 三路协议并存）
+#
+# 部署步骤（本仓库根目录执行）：
+#   1) 构建并推送镜像（Dockerfile 在 deploy/docker/Dockerfile）
+#        docker build -t dual-gateway:latest -f deploy/docker/Dockerfile .
+#        docker tag dual-gateway:latest <registry>/dual-gateway:latest
+#        docker push <registry>/dual-gateway:latest
+#      然后把 image 字段改为 <registry>/dual-gateway:latest
+#
+#   2) 创建密钥 Secret（JWT 私钥/公钥 + QUIC TLS 证书，4 个 PEM 文件）
+#      本机 config/keys/ 下已有 tokengen 生成的密钥；或先运行：
+#        go run ./test/loadtest/tokengen -keys-dir config/keys -count 1000
+#        kubectl create secret generic gateway-keys --from-file=config/keys/
+#      （Secret 挂载为只读，QUIC 证书已在其中；生产环境请轮换密钥）
+#
+#   3) 部署
+#        kubectl apply -f deploy/k8s/deployment.yaml
+#
+#   4) 验证
+#        kubectl get pods -l app=dual-gateway
+#        kubectl port-forward svc/dual-gateway-cend 8080:8080   # 本地直连 C 端
+#        curl http://<pod-ip>:9090/health
+#
+# 资源与容量：单节点 5 万 QUIC 连接实测约 6.0~6.6GB（≈121~131KB/连接），
+# 下方 limits 8Gi 支撑单 Pod 5 万 QUIC 或 5 万 C 端在线；按需缩放。
+# ============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dual-gateway
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dual-gateway
+  template:
+    metadata:
+      labels:
+        app: dual-gateway
+    spec:
+      containers:
+      - name: gateway
+        image: dual-gateway:latest
+        ports:
+        - containerPort: 8080
+          name: cend
+          protocol: TCP
+        - containerPort: 5683
+          name: iot-udp
+          protocol: UDP
+        - containerPort: 5684
+          name: iot-dtls
+          protocol: UDP
+        - containerPort: 5685
+          name: iot-quic
+          protocol: UDP
+        - containerPort: 9090
+          name: monitor
+          protocol: TCP
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: GATEWAY_ID
+          value: "$(POD_NAME)"            # 多副本唯一网关 ID
+        - name: REDIS_ADDR
+          value: "redis-service:6379"
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "2"
+          limits:
+            memory: "8Gi"                 # 5 万 QUIC 在线实测 ~6.5GB
+            cpu: "8"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /app/config/config.yml
+          subPath: config.yml
+        - name: gateway-keys
+          mountPath: /app/config/keys
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: gateway-config
+      - name: gateway-keys
+        secret:
+          secretName: gateway-keys
+          defaultMode: 0400               # 密钥仅读
+---
+# C 端 WebSocket 入口（长连接建议开启 ClientIP 会话亲和，
+# 生产环境前置 LB/Ingress 做 TLS 终结）
+apiVersion: v1
+kind: Service
+metadata:
+  name: dual-gateway-cend
+spec:
+  type: LoadBalancer
+  selector:
+    app: dual-gateway
+  sessionAffinity: ClientIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+---
+# IoT 三路协议入口（UDP：5683 MQTT-SN 明文 / 5684 DTLS-PSK / 5685 QUIC）
+# 注意：UDP LoadBalancer 需云厂商支持（如 LB 的 UDP/QUIC 转发），
+# 裸集群可改用 NodePort 或 DaemonSet + hostPort 直连 Pod IP。
+apiVersion: v1
+kind: Service
+metadata:
+  name: dual-gateway-iot
+spec:
+  type: LoadBalancer
+  selector:
+    app: dual-gateway
+  ports:
+  - name: mqttsn
+    port: 5683
+    targetPort: 5683
+    protocol: UDP
+  - name: dtls
+    port: 5684
+    targetPort: 5684
+    protocol: UDP
+  - name: quic
+    port: 5685
+    targetPort: 5685
+    protocol: UDP
+---
+# 监控（内部指标采集）
+apiVersion: v1
+kind: Service
+metadata:
+  name: dual-gateway-monitor
+spec:
+  type: ClusterIP
+  selector:
+    app: dual-gateway
+  ports:
+  - port: 9090
+    targetPort: 9090
+    protocol: TCP
+---
+# 网关配置（与 config/config.yml 同步；auth 密钥文件路径指向 Secret 挂载目录）
+# 说明：
+#   - quic_enabled: true 开启 MQTT-SN over QUIC（5685/udp）
+#   - dtls_enabled: true 开启 DTLS-PSK（5684/udp）；置 0/false 可灰度关闭
+#   - kafka 不可用时网关自动降级（kafka_available=false，日志 WARN，不影响业务）
+#   - 单副本 5 万压测时 worker_count 2048 + 队列 1M 已在默认值，无需调
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+data:
+  config.yml: |
+    runtime:
+      max_procs: 4            # 必须 >0（Validate 校验）；按 CPU limit 调整
+    log:
+      level: "info"
+      format: "json"          # 容器内建议 json 便于采集
+    cend:
+      host: "0.0.0.0"
+      port: 8080
+      max_connections: 100000
+      heartbeat_timeout: 120
+      read_buffer_size: 4096
+      write_buffer_size: 4096
+      enable_compression: false
+      max_message_size: 1048576
+    iot:
+      host: "0.0.0.0"
+      port: 5683              # MQTT-SN 明文 UDP
+      dtls_port: 5684         # DTLS-PSK（0 表示禁用）
+      psk: "iot-default-psk-2026"
+      dtls_enabled: true
+      max_packet_size: 65535
+      read_timeout: 30
+      write_timeout: 10
+      session_timeout: 300
+      worker_count: 2048
+      quic_enabled: true      # MQTT-SN over QUIC
+      quic_port: 5685
+      quic_cert: "config/keys/quic_cert.pem"   # 来自 gateway-keys Secret
+      quic_key: "config/keys/quic_key.pem"
+      quic_idle_sec: 300
+    redis:
+      addr: "redis-service:6379"
+      password: ""
+      db: 0
+      pool_size: 300
+    kafka:
+      brokers:
+        - "kafka-service:9092"
+      topic: "gateway_messages"
+      group_id: "gateway_group"
+    auth:
+      jwt_private_key_file: "config/keys/jwt_private.pem"
+      jwt_public_key_file: "config/keys/jwt_public.pem"
+      jwt_issuer: "dual-gateway"
+      jwt_ttl: 7200
+      psk_devices:
+        device_001: "psk-key-001-123456"
+        device_002: "psk-key-002-123456"
+    monitor:
+      host: "0.0.0.0"
+      port: 9090
+    shadow:
+      enabled: true
+      offline_ttl_seconds: 120
+      preoccupy_timeout_seconds: 60
+      cmd_ttl_seconds: 86400
+      max_cmd_batch: 10
+      push_enabled: true
+      geo_enabled: true
+      offline_scan_seconds: 15
+    rate_limit:
+      enabled: true
+      connect_rate: 10000
+      connect_burst: 10000
+      udp_per_ip_rate: 10000
+      udp_per_ip_burst: 20000
+      cend_accept_rate: 5000
+---
+# 可选：Redis 部署（生产建议托管 Redis/云 Redis；此处为单机演示）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command: ["redis-server", "--appendonly", "yes", "--maxmemory", "2gb", "--maxmemory-policy", "allkeys-lru"]
+        ports:
+        - containerPort: 6379
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379

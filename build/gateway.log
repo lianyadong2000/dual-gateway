@@ -1,0 +1,27 @@
+﻿2026-09-16 11:49:06.263 [INFO] main.go:52 Starting Dual Gateway version=1.0.0
+2026-09-16 11:49:06.271 [INFO] main.go:61 JWT keys ready issuer=dual-gateway ttl_seconds=7200
+2026-09-16 11:49:06.282 [INFO] main.go:70 Redis connected addr=localhost:6379
+.\build\gateway.exe : 2026/09/16 11:49:06 Connected to Redis: localhost:6379
+所在位置 行:1 字符: 44
++ ... al-gateway; .\build\gateway.exe -config config/config.yml *> build\ga ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026/09/16 11:4... localhost:6379:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026/09/16 11:49:06 Kafka unavailable (failed to dial: failed to open connection to localhost:9092: dial tcp [::1]:9092
+: connectex: No connection could be made because the target machine actively refused it.), falling back to drop mode
+2026-09-16 11:49:06.283 [WARN] main.go:77 Kafka unavailable, messages will be dropped (counted)
+2026-09-16 11:49:06.283 [INFO] server.go:95 C-end gateway started id=gateway-bj-13600-7900-5540 addr=0.0.0.0:8080
+2026-09-16 11:49:06.284 [INFO] server.go:172 IoT gateway started id=server_358459255168782336 addr=0.0.0.0:5683 workers=2048 queue=1048576
+2026-09-16 11:49:06.290 [INFO] main.go:98 Admin dashboard enabled path=/admin api=/api/admin
+2026-09-16 11:49:06.290 [INFO] main.go:149 Monitor server started addr=0.0.0.0:9090
+2026-09-16 11:49:06.290 [INFO] server.go:336 IoT DTLS gateway started addr=0.0.0.0:5684
+2026-09-16 11:49:06.301 [INFO] quic.go:115 IoT QUIC gateway started addr=0.0.0.0:5685 0rtt=true idle=5m0s
+redis: 2026/09/16 11:54:28 pubsub.go:159: redis: discarding bad PubSub connection: read tcp 127.0.0.1:19425->127.0.0.1:
+6379: wsarecv: An existing connection was forcibly closed by the remote host.
+redis: 2026/09/16 11:55:21 pubsub.go:159: redis: discarding bad PubSub connection: read tcp 127.0.0.1:26771->127.0.0.1:
+6379: wsarecv: An existing connection was forcibly closed by the remote host.
+redis: 2026/09/16 11:55:21 pubsub.go:159: redis: discarding bad PubSub connection: read tcp 127.0.0.1:44452->127.0.0.1:
+6379: wsarecv: An existing connection was forcibly closed by the remote host.
+redis: 2026/09/16 11:55:21 pubsub.go:159: redis: discarding bad PubSub connection: read tcp 127.0.0.1:44454->127.0.0.1:
+6379: wsarecv: An existing connection was forcibly closed by the remote host.

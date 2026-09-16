@@ -1,0 +1,187 @@
+package iot
+
+import (
+    "encoding/binary"
+    "fmt"
+    "net"
+    "time"
+    
+    "dual-gateway/internal/auth"
+    "dual-gateway/internal/mq"
+    "dual-gateway/internal/protocol/iot/mqttsn"
+    "dual-gateway/internal/protocol/iot/tlv"
+    "dual-gateway/internal/redis"
+    "dual-gateway/pkg/logger"
+)
+
+// 消息处理器
+type MessageHandler struct {
+    Logger logger.Logger
+}
+
+// 创建消息处理器
+func NewMessageHandler(logger logger.Logger) *MessageHandler {
+    return &MessageHandler{
+        Logger: logger,
+    }
+}
+
+// 处理数据包
+func (h *MessageHandler) HandlePacket(server *Server, data []byte, addr *net.UDPAddr) {
+    // 检查数据包长度
+    if len(data) < 2 {
+        return
+    }
+    
+    // 解析MQTT-SN消息类型
+    msgType := data[1]
+    
+    switch msgType {
+    case mqttsn.CONNECT:
+        h.handleConnect(server, data, addr)
+        
+    case mqttsn.PUBLISH:
+        h.handlePublish(server, data, addr)
+        
+    case mqttsn.PINGREQ:
+        h.handlePingReq(server, data, addr)
+        
+    case mqttsn.DISCONNECT:
+        h.handleDisconnect(server, data, addr)
+        
+    default:
+        h.Logger.Debug("Unknown MQTT-SN message type", "type", msgType)
+    }
+}
+
+// 处理CONNECT消息
+func (h *MessageHandler) handleConnect(server *Server, data []byte, addr *net.UDPAddr) {
+    // 解码CONNECT消息
+    connectMsg, err := mqttsn.DecodeConnect(data[2:])
+    if err != nil {
+        h.Logger.Error("Failed to decode CONNECT", "error", err)
+        return
+    }
+    
+    // 验证设备
+    deviceID := connectMsg.ClientID
+    if !auth.ValidatePSKDevice(deviceID) {
+        h.Logger.Warn("Invalid device", "device_id", deviceID)
+        return
+    }
+    
+    // 注册设备在线状态
+    if err := redis.RegisterIoTDevice(deviceID, server.ID, addr.String()); err != nil {
+        h.Logger.Error("Failed to register device", "error", err)
+        return
+    }
+    
+    // 发送CONNACK
+    connack := &mqttsn.ConnackMessage{
+        ReturnCode: 0x00, // Accepted
+    }
+    
+    connackData := []byte{0x03, mqttsn.CONNACK, connack.ReturnCode}
+    server.SendPacket(connackData, addr)
+    
+    h.Logger.Info("Device connected", "device_id", deviceID, "addr", addr.String())
+}
+
+// 处理PUBLISH消息
+func (h *MessageHandler) handlePublish(server *Server, data []byte, addr *net.UDPAddr) {
+    // 解码PUBLISH消息
+    publishMsg, err := mqttsn.DecodePublish(data[2:])
+    if err != nil {
+        h.Logger.Error("Failed to decode PUBLISH", "error", err)
+        return
+    }
+    
+    // 解析TLV数据
+    decoder := tlv.NewDecoder(publishMsg.Data)
+    tlvs, err := decoder.DecodeAll()
+    if err != nil {
+        h.Logger.Error("Failed to decode TLV", "error", err)
+        return
+    }
+    
+    // 提取设备ID和数据
+    var deviceID string
+    var values map[string]interface{}
+    
+    for _, tlvItem := range tlvs {
+        switch tlvItem.Type {
+        case tlv.TypeDeviceID:
+            deviceID = tlvItem.GetString()
+        case tlv.TypeTemperature:
+            if temp, err := tlvItem.GetUint16(); err == nil {
+                values["temperature"] = float32(temp) / 100 // 转换为摄氏度
+            }
+        case tlv.TypeHumidity:
+            if humidity, err := tlvItem.GetUint16(); err == nil {
+                values["humidity"] = float32(humidity) / 100
+            }
+        case tlv.TypeBattery:
+            if battery, err := tlvItem.GetUint8(); err == nil {
+                values["battery"] = battery
+            }
+        case tlv.TypeSignal:
+            if signal, err := tlvItem.GetUint8(); err == nil {
+                values["signal"] = signal
+            }
+        }
+    }
+    
+    // 发送到Kafka
+    event := map[string]interface{}{
+        "device_id":  deviceID,
+        "topic_id":   publishMsg.TopicID,
+        "msg_id":     publishMsg.MsgID,
+        "timestamp":  time.Now().Unix(),
+        "values":     values,
+        "gateway_id": server.ID,
+    }
+    
+    if err := mq.PublishIoTEvent(event); err != nil {
+        h.Logger.Error("Failed to publish event", "error", err)
+        return
+    }
+    
+    // 发送PUBACK
+    puback := &mqttsn.PubackMessage{
+        TopicID:    publishMsg.TopicID,
+        MsgID:      publishMsg.MsgID,
+        ReturnCode: 0x00,
+    }
+    
+    pubackData := []byte{
+        0x07, // Length
+        mqttsn.PUBACK,
+        byte(puback.TopicID >> 8),
+        byte(puback.TopicID),
+        byte(puback.MsgID >> 8),
+        byte(puback.MsgID),
+        puback.ReturnCode,
+    }
+    
+    server.SendPacket(pubackData, addr)
+    
+    h.Logger.Debug("Received publish", "device_id", deviceID, "values", values)
+}
+
+// 处理PINGREQ消息
+func (h *MessageHandler) handlePingReq(server *Server, data []byte, addr *net.UDPAddr) {
+    // 发送PINGRESP
+    pingResp := []byte{0x02, mqttsn.PINGRESP}
+    server.SendPacket(pingResp, addr)
+}
+
+// 处理DISCONNECT消息
+func (h *MessageHandler) handleDisconnect(server *Server, data []byte, addr *net.UDPAddr) {
+    // 清除设备在线状态
+    if len(data) > 2 {
+        // 如果有ClientID，清除对应设备
+        clientID := string(data[2:])
+        redis.RemoveIoTDevice(clientID)
+        h.Logger.Info("Device disconnected", "device_id", clientID)
+    }
+}

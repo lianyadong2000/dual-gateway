@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>双模网关管理后台</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #F4F3EE; --card: #FFFFFF; --border: #E4E3DD; --text: #1A1B1C; --sub: #6B7280;
+    --accent: #9BBBF4; --ok: #52C41A; --warn: #FAAD14; --err: #EA6668;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Roboto','PingFang SC','Segoe UI',Arial,sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+  .topbar { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .topbar h1 { font-size: 17px; font-weight: 600; }
+  .topbar .status { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--sub); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.ok { background: var(--ok); } .dot.err { background: var(--err); } .dot.warn { background: var(--warn); }
+  .tabs { display: flex; gap: 4px; padding: 8px 20px 0; background: var(--card); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .tab { padding: 8px 16px; cursor: pointer; border-radius: 8px 8px 0 0; font-size: 13px; color: var(--sub); border: 1px solid transparent; }
+  .tab.active { background: var(--bg); color: var(--text); font-weight: 600; border-color: var(--border); border-bottom-color: var(--bg); }
+  .content { padding: 16px 20px 40px; max-width: 1280px; margin: 0 auto; }
+  .panel { display: none; } .panel.active { display: block; }
+  .cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .card { flex: 1 1 150px; min-width: 140px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+  .card .label { font-size: 12px; color: var(--sub); }
+  .card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .card .value small { font-size: 12px; color: var(--sub); font-weight: 400; }
+  .card.good .value { color: var(--ok); } .card.bad .value { color: var(--err); }
+  .chart-box { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .chart-box h3 { font-size: 14px; margin-bottom: 8px; }
+  #trend { height: 260px; width: 100%; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; font-size: 12.5px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: rgba(0,0,0,0.03); color: var(--sub); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .badge { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.pass, .badge.done { background: rgba(82,196,26,0.12); color: var(--ok); }
+  .badge.fail, .badge.failed { background: rgba(234,102,104,0.12); color: var(--err); }
+  .badge.running { background: rgba(155,187,244,0.2); color: #3B6FD4; }
+  .badge.skip, .badge.warn { background: rgba(250,173,20,0.15); color: #C77E00; }
+  form { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .form-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--sub); }
+  .field input, .field select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; min-width: 110px; }
+  .field input[type=number] { width: 110px; }
+  .btn { padding: 8px 18px; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 600; }
+  .btn.primary { background: #3B6FD4; color: #fff; }
+  .btn.danger { background: rgba(234,102,104,0.15); color: var(--err); }
+  .btn.ghost { background: rgba(0,0,0,0.05); color: var(--text); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .search { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search input { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
+  .kv { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  .kv .item { background: rgba(0,0,0,0.03); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
+  .kv .item b { font-weight: 600; }
+  .log { background: #1E1E1E; color: #D4D4D4; border-radius: 8px; padding: 10px; font-family: Consolas, monospace; font-size: 11.5px; max-height: 260px; overflow-y: auto; white-space: pre-wrap; }
+  .verify-actions { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .muted { color: var(--sub); font-size: 12px; }
+  .section-title { font-size: 15px; font-weight: 600; margin: 18px 0 10px; }
+  .col-2 { display: flex; gap: 16px; flex-wrap: wrap; }
+  .col-2 > div { flex: 1 1 340px; min-width: 0; }
+  @media (max-width: 640px) { .content { padding: 12px 12px 40px; } }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>⚡ 双模网关管理后台</h1>
+  <div class="status">
+    <span><span class="dot ok" id="gwDot"></span> 网关 <span id="gwStatus">…</span></span>
+    <span>Redis <span id="redisMode">…</span></span>
+    <span>Kafka <span id="kafkaMode">…</span></span>
+    <span id="clock">…</span>
+  </div>
+</div>
+<div class="tabs">
+  <div class="tab active" data-tab="overview">总览</div>
+  <div class="tab" data-tab="shadow">设备影子</div>
+  <div class="tab" data-tab="loadtest">压测控制台</div>
+  <div class="tab" data-tab="verify">验收测试</div>
+  <div class="tab" data-tab="config">系统配置</div>
+</div>
+
+<div class="content">
+
+  <!-- ============ 总览 ============ -->
+  <div class="panel active" id="panel-overview">
+    <div class="cards">
+      <div class="card"><div class="label">C 端连接</div><div class="value" id="o-cend">0</div></div>
+      <div class="card"><div class="label">IoT 设备在线</div><div class="value" id="o-iot">0</div></div>
+      <div class="card"><div class="label">IoT 会话</div><div class="value" id="o-sessions">0</div></div>
+      <div class="card"><div class="label">QUIC 连接</div><div class="value" id="o-quic">0</div></div>
+      <div class="card"><div class="label">IoT 错误</div><div class="value" id="o-errors">0</div></div>
+      <div class="card"><div class="label">丢弃包</div><div class="value" id="o-dropped">0</div></div>
+      <div class="card"><div class="label">限流拒绝(CONNECT)</div><div class="value" id="o-rate-rej">0</div></div>
+      <div class="card"><div class="label">影子设备</div><div class="value" id="o-shadow">0</div></div>
+    </div>
+    <div class="chart-box"><h3>连接数趋势（30 秒采样）</h3><div id="trend"></div></div>
+    <div class="col-2">
+      <div>
+        <div class="section-title">接入与吞吐</div>
+        <table>
+          <tr><th>指标</th><th>当前值</th></tr>
+          <tbody id="tbl-basic"></tbody>
+        </table>
+      </div>
+      <div>
+        <div class="section-title">影子 / 指令 / 限流</div>
+        <table>
+          <tr><th>指标</th><th>当前值</th></tr>
+          <tbody id="tbl-shadow"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 设备影子 ============ -->
+  <div class="panel" id="panel-shadow">
+    <div class="search">
+      <input id="devId" placeholder="输入设备 ID，如 device_000123（格式 device_%06d）">
+      <button class="btn primary" onclick="queryShadow()">查询影子</button>
+    </div>
+    <div id="shadowResult"></div>
+  </div>
+
+  <!-- ============ 压测控制台 ============ -->
+  <div class="panel" id="panel-loadtest">
+    <form id="ltForm">
+      <div class="form-grid">
+        <div class="field"><label>类型</label>
+          <select id="lt-kind"><option value="iot">IoT 设备压测</option><option value="cend">C 端连接压测</option></select>
+        </div>
+        <div class="field" id="f-transport"><label>IoT 传输协议</label>
+          <select id="lt-transport"><option value="udp">MQTT-SN (UDP 5683)</option><option value="dtls">DTLS-PSK (5684)</option><option value="quic">MQTT-SN over QUIC (5685)</option></select>
+        </div>
+        <div class="field"><label>设备数 / 连接数</label><input type="number" id="lt-devices" value="1000" min="1"></div>
+        <div class="field"><label>并发</label><input type="number" id="lt-conc" value="100" min="1"></div>
+        <div class="field"><label>保持在线(秒)</label><input type="number" id="lt-keep" value="60" min="5"></div>
+        <div class="field" id="f-ping"><label>心跳间隔(秒)</label><input type="number" id="lt-ping" value="5" min="1"></div>
+        <div class="field"><label>设备段偏移</label><input type="number" id="lt-offset" value="0" min="0"></div>
+        <div class="field" id="f-mode"><label>行为模式</label>
+          <select id="lt-mode"><option value="">none</option><option value="status">status</option><option value="fetch">fetch</option><option value="mixed">mixed</option></select>
+        </div>
+        <div class="field" style="flex-direction:row;align-items:flex-end;gap:6px;">
+          <label><input type="checkbox" id="lt-storm"> 风暴重连</label>
+          <label><input type="checkbox" id="lt-biz"> C端业务指令</label>
+        </div>
+        <div class="field"><label>Token 文件(C端)</label><input type="text" id="lt-tokens" value="build/tokens_quic.txt"></div>
+        <div class="field"><label>&nbsp;</label><button class="btn primary" onclick="startTest()">启动压测</button></div>
+      </div>
+    </form>
+    <div class="section-title">运行中 / 最近任务</div>
+    <table>
+      <tr><th>ID</th><th>名称</th><th>状态</th><th>开始时间</th><th>最近指标</th><th>操作</th></tr>
+      <tbody id="taskRows"></tbody>
+    </table>
+    <div class="section-title">任务日志</div>
+    <div class="log" id="taskLog">选择任务查看日志</div>
+  </div>
+
+  <!-- ============ 验收测试 ============ -->
+  <div class="panel" id="panel-verify">
+    <div class="verify-actions">
+      <button class="btn primary" id="verifyBtn" onclick="runVerify()">▶ 一键全功能验收</button>
+      <span class="muted" id="verifyState">未开始</span>
+    </div>
+    <div class="section-title">验收用例（预置序列，串行执行）</div>
+    <table>
+      <tr><th>用例</th><th>结果</th><th>耗时</th><th>详情</th></tr>
+      <tbody id="verifyRows"></tbody>
+    </table>
+    <div class="section-title">验收口径说明</div>
+    <table>
+      <tr><th>用例</th><th>通过标准</th></tr>
+      <tbody>
+        <tr><td>健康检查</td><td>/health status=ok，三路协议监听正常</td></tr>
+        <tr><td>Redis 连接</td><td>非本地降级模式（影子/队列/发布订阅可用）</td></tr>
+        <tr><td>C 端连接验收</td><td>500 连接：auth_ok ≥ 99%、conn_fail=0</td></tr>
+        <tr><td>IoT 连接验收(UDP/QUIC)</td><td>500 设备：connack ≥ 99%、active≥sent、errors=0</td></tr>
+        <tr><td>指令闭环验收</td><td>C 端 charge.start → QUIC 设备在线直发 → 桩回 CMDACK，biz 有响应且 iot cmd/cmdack &gt; 0</td></tr>
+        <tr><td>设备影子验证</td><td>Redis 中存在 shadow:dev:* 影子记录</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============ 系统配置 ============ -->
+  <div class="panel" id="panel-config">
+    <div class="section-title">运行配置摘要</div>
+    <div id="cfgBox"></div>
+  </div>
+
+</div>
+
+<script>
+var trendChart = null, trendData = { t: [], cend: [], iot: [], quic: [] };
+var taskLogId = null;
+var timer = setInterval(poll, 3000);
+
+function $(id) { return document.getElementById(id); }
+function fmt(n) { return n == null ? '-' : Number(n).toLocaleString(); }
+
+document.querySelectorAll('.tab').forEach(function (el) {
+  el.addEventListener('click', function () {
+    document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+    document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('active'); });
+    el.classList.add('active');
+    $('panel-' + el.dataset.tab).classList.add('active');
+    if (el.dataset.tab === 'overview' && trendChart) trendChart.resize();
+    if (el.dataset.tab === 'loadtest') refreshTasks();
+    if (el.dataset.tab === 'config') loadConfig();
+  });
+});
+
+$('lt-kind').addEventListener('change', function () {
+  var cend = this.value === 'cend';
+  $('f-transport').style.display = cend ? 'none' : '';
+  $('f-ping').style.display = cend ? 'none' : '';
+  $('f-mode').style.display = cend ? 'none' : '';
+  $('lt-devices').previousElementSibling.textContent = cend ? '连接数' : '设备数';
+});
+
+function initTrend() {
+  trendChart = echarts.init($('trend'));
+  trendChart.setOption({
+    grid: { left: 44, right: 16, top: 24, bottom: 28 },
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['C端连接', 'IoT设备', 'QUIC连接'], top: 0 },
+    xAxis: { type: 'category', data: trendData.t, axisLabel: { fontSize: 10 } },
+    yAxis: { type: 'value', axisLabel: { fontSize: 10 } },
+    series: [
+      { name: 'C端连接', type: 'line', data: trendData.cend, smooth: true, showSymbol: false, itemStyle: { color: '#3B6FD4' } },
+      { name: 'IoT设备', type: 'line', data: trendData.iot, smooth: true, showSymbol: false, itemStyle: { color: '#52C41A' } },
+      { name: 'QUIC连接', type: 'line', data: trendData.quic, smooth: true, showSymbol: false, itemStyle: { color: '#FAAD14' } }
+    ]
+  });
+}
+
+function poll() {
+  fetch('/api/admin/overview').then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || d.error) return;
+    var ok = d.status === 'ok';
+    $('gwDot').className = 'dot ' + (ok ? 'ok' : 'err');
+    $('gwStatus').textContent = ok ? '正常' : '异常';
+    $('redisMode').textContent = d.redis_local ? '本地降级' : '已连接';
+    $('kafkaMode').textContent = d.kafka_available ? '已连接' : '不可用(降级)';
+    $('clock').textContent = new Date().toLocaleTimeString();
+    $('o-cend').textContent = fmt(d.cend_conns);
+    $('o-iot').textContent = fmt(d.iot_devices);
+    $('o-sessions').textContent = fmt(d.iot_sessions);
+    $('o-quic').textContent = fmt(d.quic_conns);
+    $('o-errors').textContent = fmt(d.iot_errors);
+    $('o-dropped').textContent = fmt(d.iot_dropped);
+    $('o-rate-rej').textContent = fmt(d.rate_connect_rejected);
+    $('o-shadow').textContent = fmt(d.shadow_total);
+    var basic = [['累计 CONNECT', d.iot_connect_cnt], ['累计 PUBLISH', d.iot_publish_cnt], ['累计数据包', d.iot_packets],
+      ['限流通过', d.rate_connect_ok], ['限流拒绝', d.rate_connect_rejected], ['C端accept拒绝', d.rate_accept_rejected], ['限流IP数', d.rate_ip_tracked]];
+    $('tbl-basic').innerHTML = basic.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + fmt(r[1]) + '</td></tr>'; }).join('');
+    var sh = [['影子事件', d.shadow_events], ['预占成功', d.shadow_preoccupy_ok], ['预占拒绝(409)', d.shadow_preoccupy_reject],
+      ['预占回滚', d.shadow_rollback], ['离线判定', d.shadow_offline], ['指令入队', d.cmd_enqueued], ['指令完成', d.cmd_done],
+      ['指令去重', d.cmd_duplicated], ['待执行队列', d.cmd_queues], ['在线影子', d.shadow_online]];
+    $('tbl-shadow').innerHTML = sh.map(function (r) { return '<tr><td>' + r[0] + '</td><td>' + fmt(r[1]) + '</td></tr>'; }).join('');
+    var now = new Date();
+    trendData.t.push(now.toLocaleTimeString().slice(0, 8));
+    trendData.cend.push(d.cend_conns); trendData.iot.push(d.iot_devices); trendData.quic.push(d.quic_conns);
+    if (trendData.t.length > 30) { trendData.t.shift(); trendData.cend.shift(); trendData.iot.shift(); trendData.quic.shift(); }
+    if (trendChart) trendChart.setOption({
+      xAxis: { data: trendData.t },
+      series: [{ data: trendData.cend }, { data: trendData.iot }, { data: trendData.quic }]
+    });
+  }).catch(function () {
+    $('gwDot').className = 'dot err'; $('gwStatus').textContent = '无法连接';
+  });
+  if ($('panel-loadtest').classList.contains('active')) refreshTasks(true);
+  if ($('panel-verify').classList.contains('active')) refreshVerify(true);
+}
+
+function queryShadow() {
+  var dev = $('devId').value.trim();
+  if (!dev) { $('shadowResult').innerHTML = '<div class="muted">请输入设备 ID</div>'; return; }
+  fetch('/api/admin/shadows?device=' + encodeURIComponent(dev)).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) { $('shadowResult').innerHTML = '<div class="muted">' + d.error + '</div>'; return; }
+    var h = '<div class="kv">' +
+      '<span class="item"><b>设备</b> ' + d.device + '</span>' +
+      '<span class="item"><b>在线时间戳</b> ' + (d.online_ts || '无') + '</span>' +
+      '<span class="item"><b>待执行队列</b> ' + d.queue_len + ' 条</span>' +
+      '</div>';
+    if (d.local_mode) h += '<div class="muted">Redis 本地降级模式，影子在网关内存中</div>';
+    else {
+      h += '<div class="section-title">影子状态 shadow:dev:' + d.device + '</div><table><tr><th>字段</th><th>值</th></tr>';
+      var sh = d.shadow || {};
+      var keys = Object.keys(sh);
+      if (keys.length === 0) h += '<tr><td colspan="2">无影子记录（设备可能从未连接）</td></tr>';
+      keys.forEach(function (k) { h += '<tr><td>' + k + '</td><td>' + (sh[k] || '') + '</td></tr>'; });
+      h += '</table>';
+      if (d.queue_head && d.queue_head.length) {
+        h += '<div class="section-title">队列头 cmd:q:' + d.device + '</div>';
+        h += '<div class="log">' + d.queue_head.map(function (x) { return escapeHtml(x); }).join('\n---\n') + '</div>';
+      }
+      if (d.iot_devices) { h += '<div class="section-title">iot_devices 注册</div><div class="muted" style="word-break:break-all">' + escapeHtml(d.iot_devices) + '</div>'; }
+    }
+    $('shadowResult').innerHTML = h;
+  });
+}
+
+function startTest() {
+  var kind = $('lt-kind').value;
+  var body = {
+    kind: kind,
+    transport: $('lt-transport').value,
+    devices: parseInt($('lt-devices').value) || 1000,
+    concurrency: parseInt($('lt-conc').value) || 100,
+    keep_alive: parseInt($('lt-keep').value) || 60,
+    ping_interval: parseInt($('lt-ping').value) || 5,
+    device_offset: parseInt($('lt-offset').value) || 0,
+    mode: $('lt-mode').value,
+    storm: $('lt-storm').checked,
+    storm_interval: 30,
+    conns: parseInt($('lt-devices').value) || 1000,
+    biz: $('lt-biz').checked,
+    biz_target: 5,
+    tokens: $('lt-tokens').value
+  };
+  fetch('/api/admin/test', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (d.error) { alert(d.error); return; }
+    setTimeout(refreshTasks, 500);
+  });
+}
+
+function refreshTasks(silent) {
+  fetch('/api/admin/test').then(function (r) { return r.json(); }).then(function (rows) {
+    if (!Array.isArray(rows)) return;
+    var h = '';
+    rows.forEach(function (t) {
+      var latest = t.latest || '';
+      var badge = t.Status === 'running' ? 'running' : (t.Status === 'done' ? 'done' : 'fail');
+      var stopBtn = t.Status === 'running' ? '<button class="btn danger" onclick="stopTask(\'' + t.ID + '\')">停止</button>' : '';
+      h += '<tr><td>' + t.ID + '</td><td>' + t.Name + '</td><td><span class="badge ' + badge + '">' + t.Status + '</span></td>' +
+        '<td>' + t.StartedAt + '</td><td style="font-size:11px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(latest) + '</td>' +
+        '<td>' + stopBtn + ' <button class="btn ghost" onclick="showLog(\'' + t.ID + '\')">日志</button></td></tr>';
+    });
+    if (!h) h = '<tr><td colspan="6" class="muted">暂无任务</td></tr>';
+    $('taskRows').innerHTML = h;
+    if (taskLogId) fetchLog(taskLogId);
+  });
+}
+
+function stopTask(id) {
+  fetch('/api/admin/test/stop?id=' + id, { method: 'POST' }).then(function () { refreshTasks(); });
+}
+
+function showLog(id) { taskLogId = id; fetchLog(id); }
+
+function fetchLog(id) {
+  fetch('/api/admin/test?id=' + id).then(function (r) { return r.json(); }).then(function (t) {
+    if (t.error) return;
+    $('taskLog').textContent = (t.Log || []).join('\n') || '（无输出）';
+  });
+}
+
+function runVerify() {
+  $('verifyBtn').disabled = true;
+  $('verifyState').textContent = '运行中…（预计 2-3 分钟）';
+  $('verifyRows').innerHTML = '<tr><td colspan="4" class="muted">验收中，请稍候…</td></tr>';
+  fetch('/api/admin/verify', { method: 'POST' }).then(function () { pollVerify(); });
+}
+
+function pollVerify() {
+  fetch('/api/admin/verify').then(function (r) { return r.json(); }).then(function (rep) {
+    if (rep.error || !rep.Cases) { setTimeout(pollVerify, 2000); return; }
+    var h = '';
+    rep.Cases.forEach(function (c) {
+      var b = c.Status === 'pass' ? 'pass' : (c.Status === 'fail' ? 'fail' : 'skip');
+      h += '<tr><td>' + c.Name + '</td><td><span class="badge ' + b + '">' + c.Status + '</span></td><td>' + c.Duration + '</td><td>' + escapeHtml(c.Detail || '') + '</td></tr>';
+    });
+    $('verifyRows').innerHTML = h;
+    if (!rep.FinishedAt) {
+      $('verifyState').textContent = '运行中…已通过 ' + rep.Passed + ' / 失败 ' + rep.Failed;
+      setTimeout(pollVerify, 2000);
+    } else {
+      $('verifyBtn').disabled = false;
+      $('verifyState').textContent = '完成：通过 ' + rep.Passed + ' / 失败 ' + rep.Failed + ' / 跳过 ' + rep.Skipped + (rep.AllPass ? ' ✓ 全部通过' : ' ✗ 存在失败');
+    }
+  });
+}
+
+function refreshVerify(silent) {
+  fetch('/api/admin/verify').then(function (r) { return r.json(); }).then(function (rep) {
+    if (rep.error || !rep.Cases) return;
+    var h = '';
+    rep.Cases.forEach(function (c) {
+      var b = c.Status === 'pass' ? 'pass' : (c.Status === 'fail' ? 'fail' : 'skip');
+      h += '<tr><td>' + c.Name + '</td><td><span class="badge ' + b + '">' + c.Status + '</span></td><td>' + c.Duration + '</td><td>' + escapeHtml(c.Detail || '') + '</td></tr>';
+    });
+    $('verifyRows').innerHTML = h;
+    if (rep.FinishedAt) {
+      $('verifyState').textContent = '完成：通过 ' + rep.Passed + ' / 失败 ' + rep.Failed + ' / 跳过 ' + rep.Skipped;
+      $('verifyBtn').disabled = false;
+    }
+  });
+}
+
+function loadConfig() {
+  fetch('/api/admin/config').then(function (r) { return r.json(); }).then(function (d) {
+    var h = '<table><tr><th>模块</th><th>关键配置</th></tr>';
+    h += '<tr><td>C 端</td><td>' + d.cend.host + ':' + d.cend.port + '，最大连接 ' + d.cend.max_connections + '，心跳超时 ' + d.cend.heartbeat_timeout + 's</td></tr>';
+    h += '<tr><td>IoT</td><td>UDP ' + d.iot.port + ' / DTLS ' + (d.iot.dtls_enabled ? d.iot.dtls_port : '禁用') + ' / QUIC ' + (d.iot.quic_enabled ? d.iot.quic_port + '（0-RTT）' : '禁用') + '，worker=' + d.iot.worker_count + '，会话超时 ' + d.iot.session_timeout + 's</td></tr>';
+    h += '<tr><td>Redis</td><td>' + d.redis.addr + '，池 ' + d.redis.pool_size + '，模式：' + (d.redis.local_mode ? '本地降级' : '已连接') + '</td></tr>';
+    h += '<tr><td>Kafka</td><td>' + (d.kafka.available ? '已连接' : '不可用（降级丢弃）') + ' ' + (d.kafka.brokers || []).join(',') + '</td></tr>';
+    h += '<tr><td>影子</td><td>' + (d.shadow.enabled ? '启用' : '禁用') + '，离线TTL ' + d.shadow.offline_ttl + 's，预占超时 ' + d.shadow.preoccupy_timeout + 's</td></tr>';
+    h += '<tr><td>限流</td><td>' + (d.rate_limit.enabled ? '启用' : '禁用') + '，CONNECT ' + d.rate_limit.connect_rate + '/s，UDP每IP ' + d.rate_limit.udp_per_ip_rate + '/s，C端accept ' + d.rate_limit.cend_accept_rate + '/s</td></tr>';
+    h += '</table>';
+    $('cfgBox').innerHTML = h;
+  });
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+initTrend();
+poll();
+</script>
+</body>
+</html>

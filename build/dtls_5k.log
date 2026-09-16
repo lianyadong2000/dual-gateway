@@ -1,0 +1,26 @@
+﻿[1.0s] connect_sent=2533 connack=2533 active=2533 errors=0 cmd=0 cmdack=0
+[2.0s] connect_sent=4711 connack=4711 active=4711 errors=0 cmd=0 cmdack=0
+[3.0s] connect_sent=4866 connack=4866 active=4866 errors=0 cmd=0 cmdack=0
+[4.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[5.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[6.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[7.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[8.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[9.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[10.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[11.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[12.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[13.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[14.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[15.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[16.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[17.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[18.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[19.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[20.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[21.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[22.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[23.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[24.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[25.0s] connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
+[DONE] elapsed=25386ms connect_sent=5000 connack=5000 active=5000 errors=0 cmd=0 cmdack=0
